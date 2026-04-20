@@ -22,4 +22,12 @@ $app->get('/hello/{name}', function (Request $request, Response $response, array
 
 $app->get('/alunni', "AlunniController:index");
 
+
+GET (/accounts/1/transactions);
+GET (/accounts/1/transactions/5);
+POST (/accounts/1/deposits);
+POST (/accounts/1/withdrawals))
+PUT (/accounts/1/transactions/5);
+DELETE (/accounts/1/transactions/5);
+
 $app->run();
