@@ -19,26 +19,27 @@ class TransactionController
     $query = $request->getQueryParams();
     $to = strtoupper($query['to'] ?? '');
 
-    if (!$id) {
-      $response->getBody()->write(json_encode(['error' => 'Missing account id']));
-      return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+    if (!$id || !is_numeric($id)) {
+        $response->getBody()->write(json_encode(['error' => 'Invalid or missing account id']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
     }
 
     if (!$to) {
-      $response->getBody()->write(json_encode(['error' => 'Missing target currency (to)']));
-      return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        $response->getBody()->write(json_encode(['error' => 'Missing target currency (to)']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
     }
 
     $mysqli = new MySQLi('my_mariadb', 'root', 'ciccio', 'scuola');
     if ($mysqli->connect_error) {
-      $response->getBody()->write(json_encode(['error' => 'Database connection failed']));
-      return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        $response->getBody()->write(json_encode(['error' => 'Database connection failed']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
     }
 
     $stmt = $mysqli->prepare("SELECT balance, currency FROM accounts WHERE id = ? LIMIT 1");
     if (!$stmt) {
-      $response->getBody()->write(json_encode(['error' => 'Database error']));
-      return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        $response->getBody()->write(json_encode(['error' => 'Database error']));
+        $mysqli->close();
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
     }
 
     $stmt->bind_param('i', $id);
@@ -47,11 +48,11 @@ class TransactionController
     $account = $result->fetch_assoc();
 
     $stmt->close();
-    $mysqli->close();
 
     if (!$account) {
-      $response->getBody()->write(json_encode(['error' => 'Account not found']));
-      return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+        $mysqli->close();
+        $response->getBody()->write(json_encode(['error' => 'Account not found']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
     }
 
     $amount = (float)$account['balance'];
@@ -59,10 +60,10 @@ class TransactionController
 
     // Call Frankfurter API to convert
     $url = sprintf(
-      'https://api.frankfurter.app/latest?amount=%s&from=%s&to=%s',
-      urlencode($amount),
-      urlencode($from),
-      urlencode($to)
+        'https://api.frankfurter.app/latest?amount=%s&from=%s&to=%s',
+        urlencode($amount),
+        urlencode($from),
+        urlencode($to)
     );
 
     $opts = ['http' => ['timeout' => 5]];
@@ -70,29 +71,42 @@ class TransactionController
     $apiResponse = @file_get_contents($url, false, $context);
 
     if ($apiResponse === false) {
-      $response->getBody()->write(json_encode(['error' => 'Currency conversion service unavailable']));
-      return $response->withHeader('Content-Type', 'application/json')->withStatus(502);
+        $mysqli->close();
+        $response->getBody()->write(json_encode(['error' => 'Currency conversion service unavailable']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(502);
     }
 
     $data = json_decode($apiResponse, true);
     if (!isset($data['rates'][$to])) {
-      $response->getBody()->write(json_encode(['error' => 'Conversion failed or unsupported currency']));
-      return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        $mysqli->close();
+        $response->getBody()->write(json_encode(['error' => 'Conversion failed or unsupported currency']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
     }
 
-    $converted = (float)$data['rates'][$to];
+    $convertedAmount = (float)$data['rates'][$to];
+
+    // Optional: aggiornare il saldo dell'account con il valore convertito
+    // Esempio: aggiornare il saldo con il valore convertito
+    $stmtUpdate = $mysqli->prepare("UPDATE accounts SET balance = ? WHERE id = ?");
+    if ($stmtUpdate) {
+        $stmtUpdate->bind_param('di', $convertedAmount, $id);
+        $stmtUpdate->execute();
+        $stmtUpdate->close();
+    }
+
+    $mysqli->close();
 
     $payload = [
-      'account_id' => $id,
-      'original' => [
-        'amount' => $amount,
-        'currency' => $from
-      ],
-      'target' => [
-        'currency' => $to,
-        'amount' => $converted
-      ],
-      'raw' => $data
+        'account_id' => $id,
+        'original' => [
+            'amount' => $amount,
+            'currency' => $from
+        ],
+        'target' => [
+            'currency' => $to,
+            'amount' => $convertedAmount
+        ],
+        'raw' => $data
     ];
 
     $response->getBody()->write(json_encode($payload));
