@@ -7,6 +7,8 @@ require __DIR__ . '/controllers/ConversionController.php';
 
 $app = AppFactory::create();
 
+$app->addBodyParsingMiddleware();
+
 //Transactions API's
 $app ->get('/accounts/{account}/transactions', 'TransactionController:allTransactions');
 $app ->get('/accounts/{account}/transactions/{transactionId}', 'TransactionController:transaction');
@@ -34,4 +36,3 @@ $app->run();
 //curl -X GET http://localhost:8080/accounts/1/balance
 //curl -X GET http://localhost:8080/accounts/1/balance/convert/fiat?to=EUR
 //curl -X GET http://localhost:8080/accounts/1/balance/convert/crypto?to=BTC
-//172.21.0.3:8080
