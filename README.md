@@ -9,6 +9,8 @@
 
 Lo schema è definito in `build/init.sql`.
 
+![Schema concettuale del database](./schema-concettuale.png)
+
 ### Tabella `account`
 - `id` int(11) NOT NULL AUTO_INCREMENT
 - `name` varchar(20) NOT NULL
